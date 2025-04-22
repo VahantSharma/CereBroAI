@@ -17,6 +17,8 @@ import {
   Brain,
   ChevronDown,
   ChevronUp,
+  Eye,
+  EyeOff,
   Key,
   MessageCircle,
   RefreshCw,
@@ -488,9 +490,12 @@ const ChatBot: React.FC = () => {
   const [isThinking, setIsThinking] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState("");
+  const [showApiKey, setShowApiKey] = useState(true);
+  const [apiKeyMasked, setApiKeyMasked] = useState(false);
 
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const apiKeyTimeout = useRef<NodeJS.Timeout | null>(null);
 
   // Scroll to bottom of messages
   useEffect(() => {
@@ -510,8 +515,55 @@ const ChatBot: React.FC = () => {
   useEffect(() => {
     if (isSettingsOpen) {
       setApiKeyInput(geminiConfig.apiKey);
+      setShowApiKey(true);
+      setApiKeyMasked(false);
+
+      // Set timeout to mask API key after 3 seconds
+      if (apiKeyInput.length > 0) {
+        if (apiKeyTimeout.current) {
+          clearTimeout(apiKeyTimeout.current);
+        }
+
+        apiKeyTimeout.current = setTimeout(() => {
+          setApiKeyMasked(true);
+        }, 3000);
+      }
+    } else {
+      // Clear timeout when dialog closes
+      if (apiKeyTimeout.current) {
+        clearTimeout(apiKeyTimeout.current);
+        apiKeyTimeout.current = null;
+      }
     }
-  }, [isSettingsOpen, geminiConfig.apiKey]);
+
+    return () => {
+      if (apiKeyTimeout.current) {
+        clearTimeout(apiKeyTimeout.current);
+        apiKeyTimeout.current = null;
+      }
+    };
+  }, [isSettingsOpen, geminiConfig.apiKey, apiKeyInput]);
+
+  useEffect(() => {
+    // Reset mask timer when API key input changes
+    if (isSettingsOpen && apiKeyInput) {
+      setApiKeyMasked(false);
+
+      if (apiKeyTimeout.current) {
+        clearTimeout(apiKeyTimeout.current);
+      }
+
+      apiKeyTimeout.current = setTimeout(() => {
+        setApiKeyMasked(true);
+      }, 3000);
+    }
+
+    return () => {
+      if (apiKeyTimeout.current) {
+        clearTimeout(apiKeyTimeout.current);
+      }
+    };
+  }, [apiKeyInput, isSettingsOpen]);
 
   const toggleChat = () => {
     setIsOpen(!isOpen);
@@ -527,6 +579,10 @@ const ChatBot: React.FC = () => {
 
   const openSettings = () => {
     setIsSettingsOpen(true);
+  };
+
+  const toggleShowApiKey = () => {
+    setShowApiKey(!showApiKey);
   };
 
   const handleSaveAPIKey = () => {
@@ -586,16 +642,21 @@ const ChatBot: React.FC = () => {
     }
   };
 
+  // Animation classes for smoother transitions
+  const chatOpenAnimation = "transition-all duration-300 ease-in-out transform";
+  const buttonHoverAnimation =
+    "transition-all hover:scale-105 active:scale-95 duration-200";
+
   return (
     <>
       <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end">
         {/* Chat Button */}
         <Button
           onClick={toggleChat}
-          className={`rounded-full w-14 h-14 bg-cerebro-accent hover:bg-cerebro-accent/90 shadow-lg flex items-center justify-center relative
+          className={`rounded-full w-16 h-16 bg-cerebro-accent hover:bg-cerebro-accent/90 shadow-xl flex items-center justify-center relative ${buttonHoverAnimation}
             ${hasUnreadMessages ? "animate-pulse" : ""}`}
         >
-          <MessageCircle size={24} />
+          <MessageCircle size={28} />
           {hasUnreadMessages && (
             <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full"></span>
           )}
@@ -604,17 +665,21 @@ const ChatBot: React.FC = () => {
         {/* Chat Interface */}
         {isOpen && (
           <Card
-            className="w-80 md:w-96 bg-cerebro-dark border border-white/10 mt-4 overflow-hidden flex flex-col shadow-xl transition-all duration-300 ease-in-out"
-            style={{ maxHeight: isMinimized ? "48px" : "500px" }}
+            className={`w-[320px] md:w-[420px] bg-cerebro-dark border border-white/10 mt-4 overflow-hidden flex flex-col shadow-xl ${chatOpenAnimation}`}
+            style={{
+              maxHeight: isMinimized ? "48px" : "560px",
+              opacity: 1,
+              transform: isMinimized ? "translateY(0)" : "translateY(0)",
+            }}
           >
             {/* Chat Header */}
             <div className="bg-cerebro-darker p-3 flex items-center justify-between border-b border-white/10">
               <div className="flex items-center space-x-2">
-                <Avatar className="h-8 w-8 bg-cerebro-accent flex items-center justify-center">
-                  <Brain className="h-5 w-5 text-white" />
+                <Avatar className="h-10 w-10 bg-cerebro-accent flex items-center justify-center">
+                  <Brain className="h-6 w-6 text-white" />
                 </Avatar>
                 <div>
-                  <span className="font-medium">Dranzer AI</span>
+                  <span className="font-medium text-lg">Dranzer AI</span>
                   <div className="text-xs text-gray-400 flex items-center">
                     <span
                       className={`w-2 h-2 ${
@@ -669,7 +734,7 @@ const ChatBot: React.FC = () => {
               <>
                 <ScrollArea
                   className="flex-1 p-4 overflow-y-auto"
-                  style={{ height: "360px" }}
+                  style={{ height: "420px" }}
                 >
                   <div className="space-y-4">
                     {messages.map((message) => (
@@ -677,17 +742,24 @@ const ChatBot: React.FC = () => {
                         key={message.id}
                         className={`flex ${
                           message.isBot ? "justify-start" : "justify-end"
+                        } ${chatOpenAnimation} ${
+                          message.isBot
+                            ? "animate-in fade-in slide-in-from-left-5"
+                            : "animate-in fade-in slide-in-from-right-5"
                         }`}
+                        style={{ animationDuration: "300ms" }}
                       >
                         <div
-                          className={`max-w-[80%] rounded-lg p-3 
+                          className={`max-w-[85%] rounded-lg p-3 shadow-md
                             ${
                               message.isBot
                                 ? "bg-cerebro-darker border border-white/10"
                                 : "bg-cerebro-accent text-white"
                             }`}
                         >
-                          <p className="whitespace-pre-wrap">{message.text}</p>
+                          <p className="whitespace-pre-wrap text-sm md:text-base">
+                            {message.text}
+                          </p>
                           <p className="text-xs opacity-70 mt-1 text-right">
                             {message.timestamp.toLocaleTimeString([], {
                               hour: "2-digit",
@@ -700,10 +772,26 @@ const ChatBot: React.FC = () => {
 
                     {/* Thinking indicator */}
                     {isThinking && (
-                      <div className="flex justify-start">
-                        <div className="max-w-[80%] rounded-lg p-3 bg-cerebro-darker border border-white/10">
-                          <div className="flex items-center space-x-1.5">
-                            <RefreshCw className="h-4 w-4 animate-spin text-cerebro-accent" />
+                      <div
+                        className="flex justify-start animate-in fade-in slide-in-from-left-5"
+                        style={{ animationDuration: "200ms" }}
+                      >
+                        <div className="max-w-[85%] rounded-lg p-3 bg-cerebro-darker border border-white/10 shadow-md">
+                          <div className="flex items-center space-x-2">
+                            <div className="flex space-x-1">
+                              <div
+                                className="w-2 h-2 bg-cerebro-accent rounded-full animate-bounce"
+                                style={{ animationDelay: "0ms" }}
+                              ></div>
+                              <div
+                                className="w-2 h-2 bg-cerebro-accent rounded-full animate-bounce"
+                                style={{ animationDelay: "150ms" }}
+                              ></div>
+                              <div
+                                className="w-2 h-2 bg-cerebro-accent rounded-full animate-bounce"
+                                style={{ animationDelay: "300ms" }}
+                              ></div>
+                            </div>
                             <p className="text-sm">Dranzer is thinking...</p>
                           </div>
                         </div>
@@ -737,19 +825,19 @@ const ChatBot: React.FC = () => {
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     placeholder="Ask about brain tumors..."
-                    className="flex-1 bg-white/5 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-cerebro-accent text-white"
+                    className="flex-1 bg-white/5 border border-white/10 rounded-md px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cerebro-accent text-white text-sm md:text-base"
                     disabled={isThinking}
                   />
                   <Button
                     type="submit"
                     size="icon"
-                    className="h-10 w-10 rounded-md bg-cerebro-accent hover:bg-cerebro-accent/90"
+                    className={`h-12 w-12 rounded-md bg-cerebro-accent hover:bg-cerebro-accent/90 ${buttonHoverAnimation}`}
                     disabled={inputValue.trim() === "" || isThinking}
                   >
                     {isThinking ? (
-                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      <RefreshCw className="h-5 w-5 animate-spin" />
                     ) : (
-                      <Send size={18} />
+                      <Send size={20} />
                     )}
                   </Button>
                 </form>
@@ -761,7 +849,7 @@ const ChatBot: React.FC = () => {
 
       {/* Settings Dialog */}
       <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-        <DialogContent className="bg-cerebro-dark border border-white/10 text-white">
+        <DialogContent className="bg-cerebro-dark border border-white/10 text-white max-w-md">
           <DialogHeader>
             <DialogTitle className="text-xl">
               Gemini API Configuration
@@ -769,15 +857,40 @@ const ChatBot: React.FC = () => {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="apiKey">Gemini API Key</Label>
-              <Input
-                id="apiKey"
-                type="password"
-                placeholder="Enter your Gemini API key"
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                className="bg-cerebro-darker border-white/10 text-white"
-              />
+              <Label htmlFor="apiKey" className="text-sm flex items-center">
+                <Key className="h-4 w-4 mr-1.5" />
+                Gemini API Key
+              </Label>
+              <div className="relative">
+                <Input
+                  id="apiKey"
+                  type={showApiKey && !apiKeyMasked ? "text" : "password"}
+                  placeholder="Enter your Gemini API key"
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  className="bg-cerebro-darker border-white/10 text-white pr-10 py-6 text-base"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-1 top-1/2 transform -translate-y-1/2 h-8 w-8"
+                  onClick={toggleShowApiKey}
+                  disabled={apiKeyMasked}
+                >
+                  {showApiKey && !apiKeyMasked ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+              {apiKeyMasked && (
+                <p className="text-xs text-amber-400 mt-1">
+                  API key is masked for security. Click "Cancel" and reopen
+                  settings to view.
+                </p>
+              )}
               <p className="text-xs text-gray-400 mt-1">
                 Get a Gemini API key from{" "}
                 <a
@@ -801,7 +914,7 @@ const ChatBot: React.FC = () => {
             </Button>
             <Button
               onClick={handleSaveAPIKey}
-              className="bg-cerebro-accent hover:bg-cerebro-accent/90"
+              className={`bg-cerebro-accent hover:bg-cerebro-accent/90 ${buttonHoverAnimation}`}
               disabled={!apiKeyInput.trim()}
             >
               Save Configuration
