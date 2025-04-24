@@ -16,8 +16,16 @@ const app = express();
 
 // Middleware
 app.use(express.json());
-app.use(cors());
-app.use(morgan("dev"));
+
+// Configure CORS
+const corsOptions = {
+  origin: process.env.CORS_ORIGIN || "*",
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+app.use(cors(corsOptions));
+
+app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 
 // Serve uploaded files
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
@@ -31,6 +39,13 @@ app.use("/api/facilities", require("./routes/facilities.routes"));
 // Health check route
 app.get("/api/health", (req, res) => {
   res.status(200).json({ status: "ok", message: "CereBro AI API is running" });
+});
+
+// Health check endpoint for Render.com
+app.get("/api/health", (req, res) => {
+  res
+    .status(200)
+    .json({ status: "ok", message: "CereBro AI Backend is running" });
 });
 
 // Error handler

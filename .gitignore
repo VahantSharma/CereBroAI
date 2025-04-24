@@ -1,9 +1,9 @@
-# Environment variables and secrets
+# Environment files
 .env
 .env.local
-.env.development
-.env.test
-.env.production
+.env.development.local
+.env.test.local
+.env.production.local
 .env.fastapi
 
 # Python
@@ -33,27 +33,59 @@ venv/
 Python-3.10.0/
 Python-3.10.0.tgz
 
-# Node.js
+# Node
 node_modules/
-npm-debug.log
-yarn-debug.log
-yarn-error.log
-.pnpm-debug.log
-.npm
-.yarn/cache
-.yarn/unplugged
-.yarn/build-state.yml
-.pnp.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Build files
-dist/
-build/
-.next/
-out/
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Editor directories and files
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Build directories
+/dist
+/server/dist
+/cortex-view-app-main/dist
+
+# Model files (large files)
+*.h5
+*.savedmodel
+
+# ML model data
+uploads/
+/uploads/
+server/uploads/
+
+# Python virtual environments
+venv/
+ml_env_py310/
+Python-3.10.0/
+
+# IDE
+/.idea
+/.vscode
+.vscode/*
+!.vscode/extensions.json
+
+# Testing
+/coverage
 
 # User uploads and temporary files
-uploads/
-server/uploads/
 *.jpg
 *.png
 *.webp
@@ -92,10 +124,6 @@ $RECYCLE.BIN/
 .settings/
 *.sublime-project
 *.sublime-workspace
-
-# Logs
-logs/
-*.log
 
 # Local database files
 *.sqlite

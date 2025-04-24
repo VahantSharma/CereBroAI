@@ -1,0 +1,54 @@
+services:
+  # Node.js Backend Service
+  - type: web
+    name: cerebro-ai-backend
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: ML_SERVICE_URL
+        value: https://cerebro-ai-ml-service.onrender.com
+    healthCheckPath: /api/health
+
+  # React Frontend Service
+  - type: web
+    name: cerebro-ai-frontend
+    runtime: static
+    plan: free
+    rootDir: cortex-view-app-main
+    buildCommand: ./build.sh
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://cerebro-ai-backend.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+  # Python FastAPI ML Service
+  - type: web
+    name: cerebro-ai-ml-service
+    runtime: python
+    plan: free
+    rootDir: server
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: MODEL_PATH
+        value: ../mri_brain_tumor_model-keras-default-v1/model.h5
+      - key: UPLOAD_DIR
+        value: uploads/mri-scans
+    healthCheckPath: /api/health
