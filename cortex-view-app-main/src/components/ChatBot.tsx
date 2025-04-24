@@ -12,8 +12,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useChatBot } from "@/contexts/ChatBotContext";
+import { useRateLimitTracker } from "@/hooks/useRateLimitTracker";
 import { GeminiAPIError, geminiChat } from "@/services/geminiService";
 import {
+  AlertCircle,
   Brain,
   ChevronDown,
   ChevronUp,
@@ -455,15 +457,21 @@ const generateResponse = (
 // Fallback responses when API is not configured or errors occur
 const fallbackResponses: Record<string, string[]> = {
   general: [
-    "I'm a specialized AI assistant for brain tumor information. To unlock my full capabilities, please configure the Gemini API key in the settings.",
-    "I can provide information about brain tumors, but I'll be much more helpful with a properly configured Gemini API key.",
-    "For complete AI-powered responses about brain tumors, please set up the Gemini API key in the settings panel.",
+    "I'm a specialized AI assistant for brain tumor information. To unlock my full capabilities, click the settings ⚙️ icon above and enter your Gemini API key.",
+    "I can provide better information about brain tumors with a Gemini API key. Click the settings ⚙️ icon to configure it.",
+    "For advanced AI-powered responses, please configure your personal Gemini API key by clicking the settings ⚙️ icon.",
   ],
   error: [
     "I encountered an issue connecting to the Gemini API. Please check your internet connection and API key.",
     "There was a problem processing your request. Please try again later or check your Gemini API configuration.",
     "I'm having trouble accessing the Gemini AI services right now. If this persists, please verify your API key is correct.",
   ],
+};
+
+// Validate Gemini API key format
+const isValidGeminiKey = (key: string): boolean => {
+  // Gemini API keys typically start with "AI" followed by alphanumeric characters
+  return /^AI[a-zA-Z0-9_-]{20,}$/.test(key.trim());
 };
 
 // Generate a fallback response when the API is not available
@@ -490,12 +498,18 @@ const ChatBot: React.FC = () => {
   const [isThinking, setIsThinking] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState("");
-  const [showApiKey, setShowApiKey] = useState(true);
-  const [apiKeyMasked, setApiKeyMasked] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [isFirstTimeUser, setIsFirstTimeUser] = useState(false);
+  const [validationError, setValidationError] = useState("");
+
+  // Use the custom hook to track rate limit status
+  const { isRetrying, retryCount, maxRetries } = useRateLimitTracker({
+    isActive: isOpen && geminiConfig.isConfigured,
+  });
 
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const apiKeyTimeout = useRef<NodeJS.Timeout | null>(null);
+  const apiKeyInputRef = useRef<HTMLInputElement>(null);
 
   // Scroll to bottom of messages
   useEffect(() => {
@@ -511,59 +525,33 @@ const ChatBot: React.FC = () => {
     }
   }, [isOpen, isMinimized]);
 
+  // Focus API key input when settings dialog is opened
+  useEffect(() => {
+    if (isSettingsOpen && apiKeyInputRef.current) {
+      setTimeout(() => {
+        if (apiKeyInputRef.current) {
+          apiKeyInputRef.current.focus();
+        }
+      }, 100);
+    }
+  }, [isSettingsOpen]);
+
   // Initialize API key input field when settings dialog opens
   useEffect(() => {
     if (isSettingsOpen) {
       setApiKeyInput(geminiConfig.apiKey);
-      setShowApiKey(true);
-      setApiKeyMasked(false);
-
-      // Set timeout to mask API key after 3 seconds
-      if (apiKeyInput.length > 0) {
-        if (apiKeyTimeout.current) {
-          clearTimeout(apiKeyTimeout.current);
-        }
-
-        apiKeyTimeout.current = setTimeout(() => {
-          setApiKeyMasked(true);
-        }, 3000);
-      }
-    } else {
-      // Clear timeout when dialog closes
-      if (apiKeyTimeout.current) {
-        clearTimeout(apiKeyTimeout.current);
-        apiKeyTimeout.current = null;
-      }
+      setShowApiKey(false);
+      setValidationError("");
     }
+  }, [isSettingsOpen, geminiConfig.apiKey]);
 
-    return () => {
-      if (apiKeyTimeout.current) {
-        clearTimeout(apiKeyTimeout.current);
-        apiKeyTimeout.current = null;
-      }
-    };
-  }, [isSettingsOpen, geminiConfig.apiKey, apiKeyInput]);
-
+  // Check if first time user
   useEffect(() => {
-    // Reset mask timer when API key input changes
-    if (isSettingsOpen && apiKeyInput) {
-      setApiKeyMasked(false);
-
-      if (apiKeyTimeout.current) {
-        clearTimeout(apiKeyTimeout.current);
-      }
-
-      apiKeyTimeout.current = setTimeout(() => {
-        setApiKeyMasked(true);
-      }, 3000);
+    const hasConfiguredBefore = localStorage.getItem("hasConfiguredChatbot");
+    if (!hasConfiguredBefore && !geminiConfig.isConfigured) {
+      setIsFirstTimeUser(true);
     }
-
-    return () => {
-      if (apiKeyTimeout.current) {
-        clearTimeout(apiKeyTimeout.current);
-      }
-    };
-  }, [apiKeyInput, isSettingsOpen]);
+  }, [geminiConfig.isConfigured]);
 
   const toggleChat = () => {
     setIsOpen(!isOpen);
@@ -577,18 +565,47 @@ const ChatBot: React.FC = () => {
     setIsMinimized(!isMinimized);
   };
 
-  const openSettings = () => {
+  const handleOpenSettings = () => {
     setIsSettingsOpen(true);
+    setIsFirstTimeUser(false);
+    localStorage.setItem("hasConfiguredChatbot", "true");
   };
 
   const toggleShowApiKey = () => {
     setShowApiKey(!showApiKey);
   };
 
-  const handleSaveAPIKey = () => {
-    setGeminiAPIKey(apiKeyInput.trim());
+  const validateAndSaveAPIKey = () => {
+    const key = apiKeyInput.trim();
+
+    // Clear previous validation errors
+    setValidationError("");
+
+    // Check for empty key
+    if (!key) {
+      setValidationError("API key cannot be empty.");
+      return;
+    }
+
+    // Check for valid format
+    if (!isValidGeminiKey(key)) {
+      setValidationError(
+        "Invalid API key format. Gemini API keys typically start with 'AI' followed by a long string."
+      );
+      return;
+    }
+
+    // Save the valid key
+    setGeminiAPIKey(key);
     setIsSettingsOpen(false);
     toast.success("Gemini API key saved successfully!");
+  };
+
+  const clearApiKey = () => {
+    setApiKeyInput("");
+    if (apiKeyInputRef.current) {
+      apiKeyInputRef.current.focus();
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -628,12 +645,41 @@ const ChatBot: React.FC = () => {
     } catch (error) {
       console.error("Error getting AI response:", error);
 
-      // Add error message
+      // Add detailed error message based on error type
       let errorMessage =
         "Sorry, I encountered an error responding to your message.";
 
       if (error instanceof GeminiAPIError) {
-        errorMessage = error.message;
+        if (
+          error.message.toLowerCase().includes("invalid") ||
+          error.message.toLowerCase().includes("key") ||
+          error.message.toLowerCase().includes("auth")
+        ) {
+          errorMessage =
+            "The API key appears to be invalid. Please check your API key in settings.";
+          // Show a toast for API key errors
+          toast.error("API key error. Please check your settings.", {
+            action: {
+              label: "Configure",
+              onClick: handleOpenSettings,
+            },
+          });
+        } else if (
+          error.message.toLowerCase().includes("rate") ||
+          error.message.toLowerCase().includes("limit") ||
+          error.message.toLowerCase().includes("quota")
+        ) {
+          errorMessage =
+            "Rate limit exceeded. I've tried several times but couldn't get a response. Please wait a few minutes before trying again, or consider upgrading your API quota.";
+
+          toast.error("Rate limit reached", {
+            description:
+              "Maximum retry attempts reached. Please wait before trying again.",
+            duration: 5000,
+          });
+        } else {
+          errorMessage = error.message;
+        }
       }
 
       addMessage(errorMessage, true);
@@ -700,8 +746,12 @@ const ChatBot: React.FC = () => {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 text-gray-400 hover:text-white hover:bg-white/10"
-                  onClick={openSettings}
+                  className={`h-8 w-8 text-gray-400 hover:text-white hover:bg-white/10 ${
+                    !geminiConfig.isConfigured
+                      ? "animate-pulse ring-2 ring-amber-500"
+                      : ""
+                  }`}
+                  onClick={handleOpenSettings}
                   title="Configure API"
                 >
                   <Settings size={16} />
@@ -728,6 +778,30 @@ const ChatBot: React.FC = () => {
                 </Button>
               </div>
             </div>
+
+            {/* First time user API key prompt */}
+            {!isMinimized && isFirstTimeUser && !geminiConfig.isConfigured && (
+              <div className="px-4 py-3 bg-cerebro-accent/10 border-b border-cerebro-accent/20">
+                <div className="flex items-start space-x-3">
+                  <Key className="h-5 w-5 text-cerebro-accent mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-white">
+                      Set up your API key
+                    </p>
+                    <p className="text-xs text-gray-300 mt-1">
+                      For the best experience, add your personal Gemini API key.
+                      <Button
+                        variant="link"
+                        className="text-cerebro-accent p-0 h-auto text-xs font-medium ml-1"
+                        onClick={handleOpenSettings}
+                      >
+                        Configure now
+                      </Button>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Chat Messages */}
             {!isMinimized && (
@@ -815,32 +889,46 @@ const ChatBot: React.FC = () => {
                 )}
 
                 {/* Input Area */}
-                <form
-                  onSubmit={handleSubmit}
-                  className="border-t border-white/10 p-3 flex items-center space-x-2 bg-cerebro-darker"
-                >
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    placeholder="Ask about brain tumors..."
-                    className="flex-1 bg-white/5 border border-white/10 rounded-md px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cerebro-accent text-white text-sm md:text-base"
-                    disabled={isThinking}
-                  />
-                  <Button
-                    type="submit"
-                    size="icon"
-                    className={`h-12 w-12 rounded-md bg-cerebro-accent hover:bg-cerebro-accent/90 ${buttonHoverAnimation}`}
-                    disabled={inputValue.trim() === "" || isThinking}
+                {!isMinimized && (
+                  <form
+                    onSubmit={handleSubmit}
+                    className="p-4 border-t border-white/10 bg-cerebro-dark"
                   >
-                    {isThinking ? (
-                      <RefreshCw className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <Send size={20} />
+                    {/* Show retry status if applicable - now using hook values */}
+                    {isRetrying && (
+                      <div className="flex items-center mb-2 p-1.5 bg-amber-500/10 rounded text-xs">
+                        <RefreshCw className="h-3 w-3 text-amber-500 mr-2 animate-spin" />
+                        <span className="text-amber-500">
+                          Rate limit hit. Retrying ({retryCount}/{maxRetries}
+                          )...
+                        </span>
+                      </div>
                     )}
-                  </Button>
-                </form>
+
+                    <div className="flex items-center space-x-2">
+                      <Input
+                        type="text"
+                        className="bg-cerebro-darker text-white border-white/10 focus-visible:ring-cerebro-accent"
+                        placeholder="Ask about brain tumors..."
+                        value={inputValue}
+                        onChange={(e) => setInputValue(e.target.value)}
+                        ref={inputRef}
+                        disabled={isThinking}
+                      />
+                      <Button
+                        type="submit"
+                        className="bg-cerebro-accent hover:bg-cerebro-accent/90"
+                        disabled={isThinking || !inputValue.trim()}
+                      >
+                        {isThinking ? (
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Send className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </form>
+                )}
               </>
             )}
           </Card>
@@ -859,49 +947,89 @@ const ChatBot: React.FC = () => {
             <div className="space-y-2">
               <Label htmlFor="apiKey" className="text-sm flex items-center">
                 <Key className="h-4 w-4 mr-1.5" />
-                Gemini API Key
+                Your Gemini API Key
               </Label>
               <div className="relative">
                 <Input
                   id="apiKey"
-                  type={showApiKey && !apiKeyMasked ? "text" : "password"}
+                  ref={apiKeyInputRef}
+                  type={showApiKey ? "text" : "password"}
                   placeholder="Enter your Gemini API key"
                   value={apiKeyInput}
-                  onChange={(e) => setApiKeyInput(e.target.value)}
-                  className="bg-cerebro-darker border-white/10 text-white pr-10 py-6 text-base"
+                  onChange={(e) => {
+                    setApiKeyInput(e.target.value);
+                    // Clear validation errors when typing
+                    if (validationError) {
+                      setValidationError("");
+                    }
+                  }}
+                  className="bg-cerebro-darker border-white/10 text-white pr-20 py-6 text-base"
                 />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-1 top-1/2 transform -translate-y-1/2 h-8 w-8"
-                  onClick={toggleShowApiKey}
-                  disabled={apiKeyMasked}
-                >
-                  {showApiKey && !apiKeyMasked ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
+                <div className="absolute right-1 top-1/2 transform -translate-y-1/2 flex">
+                  {apiKeyInput && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 mr-1"
+                      onClick={clearApiKey}
+                      title="Clear input"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
                   )}
-                </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={toggleShowApiKey}
+                    title={showApiKey ? "Hide API key" : "Show API key"}
+                  >
+                    {showApiKey ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
               </div>
-              {apiKeyMasked && (
-                <p className="text-xs text-amber-400 mt-1">
-                  API key is masked for security. Click "Cancel" and reopen
-                  settings to view.
-                </p>
+
+              {/* Validation error message */}
+              {validationError && (
+                <div className="mt-2 text-red-400 text-xs flex items-start space-x-1.5">
+                  <AlertCircle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                  <span>{validationError}</span>
+                </div>
               )}
-              <p className="text-xs text-gray-400 mt-1">
-                Get a Gemini API key from{" "}
-                <a
-                  href="https://ai.google.dev/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-cerebro-accent hover:underline"
-                >
-                  Google AI Studio
-                </a>
-              </p>
+
+              <div className="bg-cerebro-darker/50 rounded-md p-3 mt-2">
+                <h4 className="text-sm font-medium mb-2 flex items-center">
+                  <Brain className="h-4 w-4 mr-1.5 text-cerebro-accent" />
+                  How to get your Gemini API Key:
+                </h4>
+                <ol className="text-xs space-y-2 text-gray-300 list-decimal pl-4">
+                  <li>
+                    Visit{" "}
+                    <a
+                      href="https://ai.google.dev/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-cerebro-accent hover:underline"
+                    >
+                      Google AI Studio
+                    </a>
+                  </li>
+                  <li>Sign in with your Google account</li>
+                  <li>Go to "API keys" in the left sidebar</li>
+                  <li>Click "Create API Key" and copy the generated key</li>
+                  <li>Paste it here to enable AI-powered responses</li>
+                </ol>
+                <p className="text-xs text-gray-400 mt-3">
+                  Your key is stored only on your device and is never sent to
+                  our servers.
+                </p>
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -913,11 +1041,11 @@ const ChatBot: React.FC = () => {
               Cancel
             </Button>
             <Button
-              onClick={handleSaveAPIKey}
+              onClick={validateAndSaveAPIKey}
               className={`bg-cerebro-accent hover:bg-cerebro-accent/90 ${buttonHoverAnimation}`}
               disabled={!apiKeyInput.trim()}
             >
-              Save Configuration
+              Save My API Key
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -52,6 +52,12 @@ const Navbar = () => {
               </Link>
             )}
             <Link
+              to="/near-u"
+              className="text-white hover:text-cerebro-accent transition-colors"
+            >
+              Near U
+            </Link>
+            <Link
               to="/about"
               className="text-white hover:text-cerebro-accent transition-colors"
             >
@@ -159,6 +165,13 @@ const Navbar = () => {
               Dashboard
             </Link>
           )}
+          <Link
+            to="/near-u"
+            className="text-white text-lg font-medium"
+            onClick={() => setMobileMenuOpen(false)}
+          >
+            Near U
+          </Link>
           <Link
             to="/about"
             className="text-white text-lg font-medium"

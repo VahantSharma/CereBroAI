@@ -3,6 +3,7 @@ import ContactSection from "@/components/ContactSection";
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import { Card } from "@/components/ui/card";
+import { ExternalLink } from "lucide-react";
 
 const About = () => {
   const technologies = [
@@ -14,16 +15,22 @@ const About = () => {
 
   const team = [
     {
-      name: "Karan",
-      role: "AI Developer & Data Scientist",
-      bio: "Specializes in neural network architecture and medical image processing algorithms.",
+      name: "Vahant",
+      role: "AI Engineer & Full-Stack Developer",
+      bio: "Focuses on creating intuitive user interfaces and robust backend systems and develops advanced neural networks for medical imaging and builds end-to-end solutions.",
+      linkedin: "https://www.linkedin.com/in/vahant-sharma/",
     },
     {
-      name: "Vahant",
-      role: "Full-Stack Developer & UX Designer",
-      bio: "Focuses on creating intuitive user interfaces and robust backend systems for medical applications.",
+      name: "Karan",
+      role: "UI/UX Designer & Full-Stack Developer",
+      bio: "Creates intuitive user experiences and designs accessible interfaces while implementing robust backend systems for medical applications.",
+      linkedin: "https://www.linkedin.com/in/karan-bhatt-aaa1ab29a/",
     },
   ];
+
+  const handleCardClick = (url: string) => {
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
 
   return (
     <div className="min-h-screen bg-cerebro-darker text-white">
@@ -91,7 +98,7 @@ const About = () => {
                     </div>
                   ))}
                   <div className="text-center text-gray-400 text-sm">
-                    A product by Karan & Vahant
+                    A product by Vahant & Karan
                   </div>
                 </div>
               </div>
@@ -114,9 +121,13 @@ const About = () => {
               {team.map((member, index) => (
                 <Card
                   key={index}
-                  className="bg-cerebro-darker border-white/10 p-8"
+                  className="bg-cerebro-darker border-white/10 p-8 cursor-pointer transition-all hover:shadow-lg hover:shadow-cerebro-accent/20 hover:scale-105"
+                  onClick={() => handleCardClick(member.linkedin)}
                 >
-                  <div className="text-center">
+                  <div className="text-center relative">
+                    <div className="absolute top-0 right-0">
+                      <ExternalLink className="h-5 w-5 text-cerebro-accent opacity-60" />
+                    </div>
                     <div className="w-24 h-24 bg-cerebro-accent/20 rounded-full flex items-center justify-center mx-auto mb-6">
                       <span className="text-3xl font-serif">
                         {member.name.charAt(0)}

@@ -53,6 +53,94 @@ interface GeminiChatParams {
 }
 
 /**
+ * Helper function to implement retry logic with exponential backoff
+ * @param fn The async function to call with retry logic
+ * @param maxRetries Maximum number of retries (default: 3)
+ * @param initialDelay Initial delay in milliseconds (default: 1000)
+ * @returns Result of the function call
+ */
+const callWithRetry = async <T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+  initialDelay = 1000
+): Promise<T> => {
+  let retries = 0;
+
+  try {
+    while (true) {
+      try {
+        const result = await fn();
+
+        // If successful after retries, emit completion event
+        if (retries > 0) {
+          const completeEvent = new CustomEvent("gemini-retry-complete", {
+            detail: { success: true },
+          });
+          window.dispatchEvent(completeEvent);
+        }
+
+        return result;
+      } catch (error) {
+        // Check if it's a rate limit error
+        if (
+          error instanceof GeminiAPIError &&
+          (error.message.toLowerCase().includes("rate") ||
+            error.message.toLowerCase().includes("limit") ||
+            error.message.toLowerCase().includes("quota"))
+        ) {
+          retries++;
+          console.log(`Rate limit hit. Retry attempt ${retries}/${maxRetries}`);
+
+          // Dispatch custom event for retry status
+          const retryEvent = new CustomEvent("gemini-retry", {
+            detail: {
+              attempt: retries,
+              maxRetries: maxRetries,
+              error: error.message,
+            },
+          });
+          window.dispatchEvent(retryEvent);
+
+          // If we've reached max retries, throw the error
+          if (retries >= maxRetries) {
+            console.error(`Max retries (${maxRetries}) reached. Giving up.`);
+
+            // Dispatch event for max retries reached
+            const maxRetriesEvent = new CustomEvent("gemini-retry-complete", {
+              detail: {
+                success: false,
+                error: error.message,
+              },
+            });
+            window.dispatchEvent(maxRetriesEvent);
+
+            throw error;
+          }
+
+          // Calculate delay with exponential backoff (1s, 2s, 4s, 8s, etc.)
+          const delay = initialDelay * Math.pow(2, retries - 1);
+          console.log(`Waiting ${delay}ms before next retry...`);
+
+          // Wait for the calculated delay
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        } else {
+          // For non-rate-limit errors, throw immediately
+          throw error;
+        }
+      }
+    }
+  } finally {
+    // Ensure we always clear the retrying state if something unexpected happens
+    if (retries > 0) {
+      const finalEvent = new CustomEvent("gemini-retry-complete", {
+        detail: { forced: true },
+      });
+      window.dispatchEvent(finalEvent);
+    }
+  }
+};
+
+/**
  * Sends a message to the Gemini API and returns the response
  */
 export const geminiChat = async ({
@@ -65,111 +153,122 @@ export const geminiChat = async ({
       throw new GeminiAPIError("API key is required");
     }
 
-    // Initialize the Gemini API client
-    const genAI = new GoogleGenerativeAI(apiKey);
+    // Use retry logic for the entire API interaction
+    return await callWithRetry(async () => {
+      // Initialize the Gemini API client
+      const genAI = new GoogleGenerativeAI(apiKey);
 
-    // Get the Gemini Pro model
-    const model = genAI.getGenerativeModel({
-      model: "gemini-pro",
-      safetySettings: [
-        {
-          category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-          threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+      // Get the Gemini Pro model
+      const model = genAI.getGenerativeModel({
+        model: "gemini-pro",
+        safetySettings: [
+          {
+            category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+            threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+          },
+          {
+            category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+            threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+          },
+          {
+            category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+            threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+          },
+          {
+            category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+            threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+          },
+        ],
+        generationConfig: {
+          temperature: 0.7,
+          topP: 0.95,
+          topK: 40,
+          maxOutputTokens: 800,
         },
-        {
-          category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-          threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-          threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-          threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-        },
-      ],
-      generationConfig: {
-        temperature: 0.7,
-        topP: 0.95,
-        topK: 40,
-        maxOutputTokens: 800,
-      },
-    });
+      });
 
-    // Start a chat session
-    const chat = model.startChat({
-      history: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: "You are Dranzer, a specialized AI assistant for brain tumor information",
-            },
-          ],
+      // Start a chat session
+      const chat = model.startChat({
+        history: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: "You are Dranzer, a specialized AI assistant for brain tumor information",
+              },
+            ],
+          },
+          {
+            role: "model",
+            parts: [
+              {
+                text: "I understand. I am Dranzer, a specialized AI assistant focused on providing information about brain tumors. I can provide details about different types of brain tumors, their symptoms, diagnosis methods, and treatment options. How can I assist you today?",
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.7,
+          topP: 0.95,
+          topK: 40,
+          maxOutputTokens: 800,
         },
+      });
+
+      // Add the system instructions
+      const historyWithSystem = [
+        { role: "user" as const, text: SYSTEM_INSTRUCTIONS },
         {
-          role: "model",
-          parts: [
-            {
-              text: "I understand. I am Dranzer, a specialized AI assistant focused on providing information about brain tumors. I can provide details about different types of brain tumors, their symptoms, diagnosis methods, and treatment options. How can I assist you today?",
-            },
-          ],
+          role: "model" as const,
+          text: "I understand my role as Dranzer, the specialized brain tumor information assistant. I will provide accurate, compassionate information while respecting the boundaries of medical advice. I'll focus on brain tumor types, symptoms, diagnosis, and treatments while emphasizing the importance of professional medical care.",
         },
-      ],
-      generationConfig: {
-        temperature: 0.7,
-        topP: 0.95,
-        topK: 40,
-        maxOutputTokens: 800,
-      },
-    });
+        ...conversationHistory,
+      ];
 
-    // Add the system instructions
-    const historyWithSystem = [
-      { role: "user" as const, text: SYSTEM_INSTRUCTIONS },
-      {
-        role: "model" as const,
-        text: "I understand my role as Dranzer, the specialized brain tumor information assistant. I will provide accurate, compassionate information while respecting the boundaries of medical advice. I'll focus on brain tumor types, symptoms, diagnosis, and treatments while emphasizing the importance of professional medical care.",
-      },
-      ...conversationHistory,
-    ];
-
-    // Add conversation history to the chat context
-    for (const message of historyWithSystem) {
-      if (message.role === "user") {
-        await chat.sendMessage(message.text);
+      // Add conversation history to the chat context
+      for (const message of historyWithSystem) {
+        if (message.role === "user") {
+          await chat.sendMessage(message.text);
+        }
+        // We don't need to process model responses as they're just for context
       }
-      // We don't need to process model responses as they're just for context
-    }
 
-    // Send the user's new message
-    const result = await chat.sendMessage(userMessage);
-    const response = result.response.text();
+      // Send the user's new message
+      const result = await chat.sendMessage(userMessage);
+      const response = result.response.text();
 
-    if (!response) {
-      throw new GeminiAPIError("Empty response from Gemini API");
-    }
+      if (!response) {
+        throw new GeminiAPIError("Empty response from Gemini API");
+      }
 
-    return response;
+      return response;
+    });
   } catch (error) {
     console.error("Gemini API error:", error);
 
-    // Check if it's a rate limit error
-    if (error instanceof Error && error.message.includes("rate")) {
-      throw new GeminiAPIError(
-        "Rate limit exceeded. Please try again in a moment."
-      );
-    }
-
-    // Check if it's an API key error
-    if (error instanceof Error && error.message.includes("key")) {
-      throw new GeminiAPIError("Invalid API key or authentication error.");
-    }
-
-    // Handle other errors
+    // Improved error categorization
     if (error instanceof Error) {
-      throw new GeminiAPIError(`Error: ${error.message}`);
+      const errorMsg = error.message.toLowerCase();
+
+      if (
+        errorMsg.includes("rate") ||
+        errorMsg.includes("limit") ||
+        errorMsg.includes("quota")
+      ) {
+        throw new GeminiAPIError(
+          "Rate limit exceeded. The system will automatically retry, but please wait a moment before sending more messages."
+        );
+      } else if (errorMsg.includes("key") || errorMsg.includes("auth")) {
+        throw new GeminiAPIError(
+          "Invalid API key or authentication error. Please check your API key in settings."
+        );
+      } else if (errorMsg.includes("connect") || errorMsg.includes("network")) {
+        throw new GeminiAPIError(
+          "Network error. Please check your internet connection and try again."
+        );
+      } else {
+        throw new GeminiAPIError(`Error: ${error.message}`);
+      }
     } else {
       throw new GeminiAPIError(
         "An unknown error occurred while connecting to the Gemini API"

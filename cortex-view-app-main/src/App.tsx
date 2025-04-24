@@ -10,6 +10,7 @@ import About from "./pages/About";
 import Contact from "./pages/Contact";
 import Dashboard from "./pages/Dashboard";
 import Index from "./pages/Index";
+import NearU from "./pages/NearU";
 import NotFound from "./pages/NotFound";
 import SignIn from "./pages/SignIn";
 import SignUp from "./pages/SignUp";
@@ -32,6 +33,7 @@ const App = () => (
               <Route path="/signup" element={<SignUp />} />
               <Route path="/about" element={<About />} />
               <Route path="/contact" element={<Contact />} />
+              <Route path="/near-u" element={<NearU />} />
 
               {/* Protected routes */}
               <Route element={<ProtectedRoute />}>
