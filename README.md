@@ -109,7 +109,3 @@ The system uses a deep learning model trained on MRI brain scans to detect and c
 2. **Glioma**: Tumors that grow in the brain or spinal cord, starting in the glial cells
 3. **Pituitary**: Tumors that affect the pituitary gland
 4. **No Tumor**: Normal brain tissue without abnormal cell growth
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
